@@ -1,6 +1,9 @@
 // Clang Build Analyzer https://github.com/aras-p/ClangBuildAnalyzer
 // SPDX-License-Identifier: Unlicense
 #pragma once
+
+#include <boost/bimap.hpp>
+
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -80,7 +83,7 @@ struct IndexedVector : std::vector<T>
     typename std::vector<T>::reference       operator[](Idx pos) { return this->begin()[pos.idx]; }
     typename std::vector<T>::const_reference operator[](Idx pos) const { return this->begin()[pos.idx]; }
 };
-typedef IndexedVector<std::string, DetailIndex> BuildNames;
+typedef boost::bimap<std::string, DetailIndex> BuildNames;
 typedef IndexedVector<BuildEvent, EventIndex> BuildEvents;
 
 void ParseBuildEvents(const std::string& fileName, std::string& jsonText, BuildEvents& outEvents, BuildNames& outNames);

@@ -12,7 +12,14 @@ static void DebugPrintEvents(const BuildEvents& events, const BuildNames& names)
     for (size_t i = 0; i < events.size(); ++i)
     {
         const BuildEvent& event = events[EventIndex(int(i))];
-        printf("%4zi: t=%i t1=%7llu t2=%7llu par=%4i ch=%4zi det=%s\n", i, event.type, event.ts, event.ts+event.dur, event.parent.idx, event.children.size(), names[event.detailIndex].substr(0,130).c_str());
+        printf("%4zi: t=%i t1=%7llu t2=%7llu par=%4i ch=%4zi det=%s\n",
+               i,
+               event.type,
+               event.ts,
+               event.ts + event.dur,
+               event.parent.idx,
+               event.children.size(),
+               names.right.find(event.detailIndex)->second.substr(0, 130).c_str());
     }
 }
 
@@ -108,16 +115,13 @@ struct JsonTraverser
     BuildNames& resultNames;
     BuildEvents fileEvents;
 
-    std::unordered_map<std::string, DetailIndex> nameToIndex;
-
     DetailIndex NameToIndex(const std::string& name)
     {
-        auto it = nameToIndex.find(name);
-        if (it != nameToIndex.end())
+        auto it = resultNames.left.find(name);
+        if (it != resultNames.left.end())
             return it->second;
-        DetailIndex index((int)nameToIndex.size());
-        nameToIndex.insert(std::make_pair(name, index));
-        resultNames.push_back(name);
+        DetailIndex index((int)resultNames.size());
+        resultNames.insert({name, index});
         return index;
     }
 

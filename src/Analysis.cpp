@@ -50,10 +50,8 @@ struct Analysis
     Analysis(const BuildEvents& events_, BuildNames& buildNames_, FILE* out_)
     : events(events_)
     , buildNames(buildNames_)
-    , buildNamesDone(buildNames_.size(), 0)
     , out(out_)
     {
-        buildNamesDone.resize(buildNames.size());
         functions.reserve(256);
         instantiations.reserve(256);
         parseFiles.reserve(64);
@@ -63,31 +61,29 @@ struct Analysis
 
     const BuildEvents& events;
     BuildNames& buildNames;
-    IndexedVector<char, DetailIndex> buildNamesDone;
 
     FILE* out;
 
-    const std::string& GetBuildName(DetailIndex index)
+    std::string GetBuildName(DetailIndex index)
     {
-        auto& name = buildNames[index];
-        if (!buildNamesDone[index])
+        auto it = buildNames.right.find(index);
+        assert(it != buildNames.right.end());
+
+        auto name = utils::GetNicePath(it->second);
+        // don't report the clang trace .json file, instead get the object file at the same location if it's there
+        if (utils::EndsWith(name, ".json"))
         {
-            name = utils::GetNicePath(name);
-            // don't report the clang trace .json file, instead get the object file at the same location if it's there
-            if (utils::EndsWith(name, ".json"))
+            std::string candidate = name.substr(0, name.length()-4) + "o";
+            if (cf_file_exists(candidate.c_str()))
+                name = candidate;
+            else
             {
-                std::string candidate = name.substr(0, name.length()-4) + "o";
+                candidate += "bj";
                 if (cf_file_exists(candidate.c_str()))
                     name = candidate;
-                else
-                {
-                    candidate += "bj";
-                    if (cf_file_exists(candidate.c_str()))
-                        name = candidate;
-                }
             }
-            buildNamesDone[index] = 1;
         }
+
         return name;
     }
 
