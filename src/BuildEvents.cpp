@@ -129,33 +129,8 @@ struct JsonTraverser
             resultEvents.clear();
             return;
         }
-        const auto& files = node.get_value_of_key(sajson::literal("files"));
-        ParseFiles(files);
-    }
-
-    void ParseFiles(const sajson::value& node)
-    {
-        if (node.get_type() != sajson::TYPE_OBJECT)
-        {
-            printf("%sERROR: 'files' of JSON should be an object.%s\n", col::kRed, col::kReset);
-            resultEvents.clear();
-            return;
-        }
-
-        for (size_t i = 0, n = node.get_length(); i != n; ++i)
-        {
-            const auto& fileName = node.get_object_key(i);
-            curFileName = fileName.as_string();
-            const auto& fileVal = node.get_object_value(i);
-            if (fileVal.get_type() != sajson::TYPE_OBJECT)
-            {
-                printf("%sERROR: 'files' elements in JSON should be objects.%s\n", col::kRed, col::kReset);
-                resultEvents.clear();
-                return;
-            }
-            const auto& traceEventsVal = fileVal.get_value_of_key(sajson::literal("traceEvents"));
-            ParseTraceEvents(traceEventsVal);
-        }
+        const auto& traceEventsVal = node.get_value_of_key(sajson::literal("traceEvents"));
+        ParseTraceEvents(traceEventsVal);
     }
 
     void ParseTraceEvents(const sajson::value& node)
@@ -183,6 +158,7 @@ struct JsonTraverser
                 return;
             }
         }
+
         AddEvents(resultEvents, fileEvents);
     }
 
@@ -302,11 +278,12 @@ struct JsonTraverser
 
         if (event.detailIndex == DetailIndex() && event.type == BuildEventType::kCompiler)
             event.detailIndex = NameToIndex(curFileName);
+
         fileEvents.emplace_back(event);
     }
 };
 
-void ParseBuildEvents(std::string& jsonText, BuildEvents& outEvents, BuildNames& outNames)
+void ParseBuildEvents(const std::string& fileName, std::string& jsonText, BuildEvents& outEvents, BuildNames& outNames)
 {
     const sajson::document& doc = sajson::parse(sajson::dynamic_allocation(), sajson::mutable_string_view(jsonText.size(), &jsonText[0]));
     if (!doc.is_valid())
@@ -316,6 +293,7 @@ void ParseBuildEvents(std::string& jsonText, BuildEvents& outEvents, BuildNames&
     }
 
     JsonTraverser traverser(outEvents, outNames);
+    traverser.curFileName = fileName;
     traverser.ParseRoot(doc.get_root());
     //DebugPrintEvents(outEvents, outNames);
 }

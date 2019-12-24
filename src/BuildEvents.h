@@ -83,4 +83,4 @@ struct IndexedVector : std::vector<T>
 typedef IndexedVector<std::string, DetailIndex> BuildNames;
 typedef IndexedVector<BuildEvent, EventIndex> BuildEvents;
 
-void ParseBuildEvents(std::string& jsonText, BuildEvents& outEvents, BuildNames& outNames);
+void ParseBuildEvents(const std::string& fileName, std::string& jsonText, BuildEvents& outEvents, BuildNames& outNames);

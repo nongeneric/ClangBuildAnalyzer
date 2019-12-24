@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string>
 #include <time.h>
-#include <map>
+#include <set>
 #include <algorithm>
 
 #ifdef _MSC_VER
@@ -62,8 +62,7 @@ static void PrintUsage()
 {
     printf("%sUSAGE%s: one of\n", col::kBold, col::kReset);
     printf("  ClangBuildAnalyzer %s--start <artifactsdir>%s\n", col::kBold, col::kReset);
-    printf("  ClangBuildAnalyzer %s--stop <artifactsdir> <filename>%s\n", col::kBold, col::kReset);
-    printf("  ClangBuildAnalyzer %s--analyze <filename>%s\n", col::kBold, col::kReset);
+    printf("  ClangBuildAnalyzer %s--analyze <dirname>%s\n", col::kBold, col::kReset);
 }
 
 static int RunStart(int argc, const char* argv[])
@@ -110,9 +109,9 @@ static time_t FiletimeToTime(const FILETIME& ft)
 
 struct JsonFileFinder
 {
-    time_t startTime;
-    time_t endTime;
-    std::map<std::string, std::string> files; // have it sorted by path
+    time_t startTime{};
+    time_t endTime{};
+    std::set<std::string> files; // have it sorted by path
 
     void OnFile(cf_file_t* f)
     {
@@ -135,29 +134,10 @@ struct JsonFileFinder
         if (fileModTime < startTime || fileModTime > endTime)
             return;
 
-        // read the file
-        std::string str = ReadFileToString(f->path);
-        if (str.empty())
-        {
-            printf("%s  WARN: could not read file '%s'.%s\n", col::kYellow, f->path, col::kReset);
-            return;
-        }
-
-        // there might be non-clang time trace json files around;
-        // the clang ones should have this inside them
-        const char* clangMarker = "{\"cat\":\"\",\"pid\":1,\"tid\":0,\"ts\":0,\"ph\":\"M\",\"name\":\"process_name\",\"args\":{\"name\":\"clang\"}}";
-        if (strstr(str.c_str(), clangMarker) == NULL)
-            return;
-
-        // do not grab our own merged json file!
-        const char* analyzerMarker = "{\"ClangBuildAnalyzerMarker\":\"BigJsonFile\",";
-        if (strstr(str.c_str(), analyzerMarker) != NULL)
-            return;
-
         // replace backslash with forward slash to avoid json errors on Windows
         std::string path = f->path;
         std::replace(path.begin(), path.end(), '\\', '/');
-        files.insert(std::make_pair(path, str));
+        files.insert(path);
         //printf("    debug: reading %s\n", f->path);
     }
 
@@ -168,30 +148,17 @@ struct JsonFileFinder
     }
 };
 
-static int RunStop(int argc, const char* argv[])
+std::optional<time_t> ReadSessionFile(const std::string& root)
 {
-    if (argc < 4)
-    {
-        printf("%sERROR: --stop requires <artifactsdir> <filename> to be passed.%s\n", col::kRed, col::kReset);
-        return 1;
-    }
-
-    uint64_t tStart = stm_now();
-
-    std::string outFile = argv[3];
-    printf("%sStopping build tracing and saving to '%s'...%s\n", col::kYellow, outFile.c_str(), col::kReset);
-
-    std::string artifactsDir = argv[2];
-    std::string fname = artifactsDir+"/ClangBuildAnalyzerSession.txt";
+    std::string fname = root + "/ClangBuildAnalyzerSession.txt";
     FILE* fsession = fopen(fname.c_str(), "rt");
     if (!fsession)
     {
         printf("%sERROR: failed to open session file at '%s'.%s\n", col::kRed, fname.c_str(), col::kReset);
-        return 1;
+        return {};
     }
 
     time_t startTime = 0;
-    time_t stopTime = time(NULL);
 #if _MSC_VER
     fscanf(fsession, "%llu", &startTime);
 #else
@@ -199,58 +166,8 @@ static int RunStop(int argc, const char* argv[])
 #endif
     fclose(fsession);
 
-    JsonFileFinder jsonFiles;
-    jsonFiles.startTime = startTime;
-    jsonFiles.endTime = stopTime;
-    cf_traverse(artifactsDir.c_str(), JsonFileFinder::Callback, &jsonFiles);
-
-    if (jsonFiles.files.empty())
-    {
-        printf("%sERROR: no clang -ftime-trace .json files found under '%s'.%s\n", col::kRed, artifactsDir.c_str(), col::kReset);
-        return 1;
-    }
-
-    // create a big json file out of all the found ones
-    std::string bigJson;
-    bigJson.reserve(4*1024*1024);
-    bigJson += "{\"ClangBuildAnalyzerMarker\":\"BigJsonFile\",\n";
-    bigJson += "\"files\":{\n";
-    size_t jsonIndex = 0;
-    for (const auto& kvp : jsonFiles.files)
-    {
-        bigJson += "\"";
-        bigJson += kvp.first;
-        bigJson += "\":\n";
-        bigJson += kvp.second;
-        if (jsonIndex != jsonFiles.files.size()-1)
-            bigJson += ",";
-        bigJson += "\n";
-        ++jsonIndex;
-    }
-    bigJson += "\n}}\n";
-
-    FILE* fout = fopen(outFile.c_str(), "wb");
-    if (!fout)
-    {
-        printf("%sERROR: failed to write result file '%s'.%s\n", col::kRed, outFile.c_str(), col::kReset);
-        return 1;
-    }
-    const size_t numBytesWritten = fwrite(bigJson.data(), 1, bigJson.size(), fout);
-    if (numBytesWritten != bigJson.size())
-    {
-        printf("%sERROR: failed to write result file '%s', %zu of %zu bytes written.%s\n",
-            col::kRed, outFile.c_str(), numBytesWritten, bigJson.size(), col::kReset);
-        fclose(fout);
-        return 1;
-    }
-    fclose(fout);
-
-    double tDuration = stm_sec(stm_since(tStart));
-    printf("%s  done in %.1fs. Run 'ClangBuildAnalyzer --analyze %s' to analyze it.%s\n", col::kYellow, tDuration, outFile.c_str(), col::kReset);
-
-    return 0;
+    return startTime;
 }
-
 
 static int RunAnalyze(int argc, const char* argv[], FILE* out)
 {
@@ -265,23 +182,45 @@ static int RunAnalyze(int argc, const char* argv[], FILE* out)
     std::string inFile = argv[2];
     printf("%sAnalyzing build trace from '%s'...%s\n", col::kYellow, inFile.c_str(), col::kReset);
 
-    // read file
-    std::string inFileStr = ReadFileToString(inFile);
-    if (inFileStr.empty())
+    BuildEvents events;
+    BuildNames names;
+
+    JsonFileFinder jsonFiles;
+    auto session = ReadSessionFile(inFile);
+    if (!session)
+        return 1;
+
+    jsonFiles.startTime = *session;
+    jsonFiles.endTime = time(NULL);
+    cf_traverse(inFile.c_str(), JsonFileFinder::Callback, &jsonFiles);
+
+    if (jsonFiles.files.empty())
     {
-        printf("%sERROR: failed to open file '%s'.%s\n", col::kRed, inFile.c_str(), col::kReset);
+        printf("%sERROR: no clang -ftime-trace .json files found under '%s'.%s\n", col::kRed, inFile.c_str(), col::kReset);
         return 1;
     }
 
-    BuildEvents events;
-    BuildNames names;
-    events.reserve(2048);
-    names.reserve(2048);
-    ParseBuildEvents(inFileStr, events, names);
-    if (events.empty())
+    for (auto& file : jsonFiles.files)
     {
-        printf("%s  no trace events found.%s\n", col::kYellow, col::kReset);
-        return 1;
+        std::string str = ReadFileToString(file);
+        if (str.empty())
+        {
+            printf("%s  WARN: could not read file '%s'.%s\n", col::kYellow, file.c_str(), col::kReset);
+            continue;
+        }
+
+        // there might be non-clang time trace json files around;
+        // the clang ones should have this inside them
+        const char* clangMarker = "{\"cat\":\"\",\"pid\":1,\"tid\":0,\"ts\":0,\"ph\":\"M\",\"name\":\"process_name\",\"args\":{\"name\":\"clang\"}}";
+        if (strstr(str.c_str(), clangMarker) == NULL)
+            continue;
+
+        ParseBuildEvents(file, str, events, names);
+        if (events.empty())
+        {
+            printf("%s  no trace events found.%s\n", col::kYellow, col::kReset);
+            continue;
+        }
     }
 
     DoAnalysis(events, names, out);
@@ -304,8 +243,6 @@ static int RunOneTest(const std::string& folder)
         folder.c_str(),
         traceFile.c_str()
     };
-    if (RunStop(4, kStopArgs) != 0)
-        return false;
 
     std::string gotTrace = ReadFileToString(traceFile);
     std::string expTrace = ReadFileToString(traceExpFile);
@@ -391,8 +328,6 @@ static int ProcessCommands(int argc, const char* argv[])
 {
     if (strcmp(argv[1], "--start") == 0)
         return RunStart(argc, argv);
-    if (strcmp(argv[1], "--stop") == 0)
-        return RunStop(argc, argv);
     if (strcmp(argv[1], "--analyze") == 0)
         return RunAnalyze(argc, argv, stdout);
     if (strcmp(argv[1], "--test") == 0)

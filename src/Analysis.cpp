@@ -149,7 +149,7 @@ struct Analysis
 
 DetailIndex Analysis::FindPath(EventIndex eventIndex) const
 {
-    while(eventIndex >= EventIndex())
+    while(eventIndex != EventIndex())
     {
         const BuildEvent& ev = events[eventIndex];
         if (ev.type == BuildEventType::kCompiler || ev.type == BuildEventType::kFrontend || ev.type == BuildEventType::kBackend || ev.type == BuildEventType::kOptModule)
@@ -190,6 +190,7 @@ void Analysis::ProcessEvent(EventIndex eventIndex)
             parseFiles.emplace_back(fe);
         }
     }
+
     if (event.type == BuildEventType::kBackend)
     {
         totalCodegenUs += event.dur;
@@ -201,6 +202,7 @@ void Analysis::ProcessEvent(EventIndex eventIndex)
             codegenFiles.emplace_back(fe);
         }
     }
+
     if (event.type == BuildEventType::kParseFile)
     {
         std::string path = GetBuildName(event.detailIndex);
