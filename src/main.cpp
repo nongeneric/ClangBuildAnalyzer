@@ -148,14 +148,14 @@ struct JsonFileFinder
     }
 };
 
-std::optional<time_t> ReadSessionFile(const std::string& root)
+time_t ReadSessionFile(const std::string& root)
 {
     std::string fname = root + "/ClangBuildAnalyzerSession.txt";
     FILE* fsession = fopen(fname.c_str(), "rt");
     if (!fsession)
     {
-        printf("%sERROR: failed to open session file at '%s'.%s\n", col::kRed, fname.c_str(), col::kReset);
-        return {};
+        printf("%sWARN: failed to open session file at '%s'. Assuming zero timestamp.%s\n", col::kYellow, fname.c_str(), col::kReset);
+        return 0;
     }
 
     time_t startTime = 0;
@@ -186,11 +186,7 @@ static int RunAnalyze(int argc, const char* argv[], FILE* out)
     BuildNames names;
 
     JsonFileFinder jsonFiles;
-    auto session = ReadSessionFile(inFile);
-    if (!session)
-        return 1;
-
-    jsonFiles.startTime = *session;
+    jsonFiles.startTime = ReadSessionFile(inFile);
     jsonFiles.endTime = time(NULL);
     cf_traverse(inFile.c_str(), JsonFileFinder::Callback, &jsonFiles);
 
